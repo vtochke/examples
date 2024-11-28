@@ -1,5 +1,9 @@
 package event_async
 
+import (
+	"fmt"
+)
+
 var Publishers = make(map[string]*Publisher)
 
 func AddSubscriber(name string, s *Subscriber) {
@@ -17,6 +21,9 @@ func PublishMessage(name string, m Message) {
 
 func Listen() {
 	for _, pub := range Publishers {
-		go pub.start()
+		go pub.Start()
 	}
+
+	fmt.Scanln()
+	fmt.Println("Done!")
 }
