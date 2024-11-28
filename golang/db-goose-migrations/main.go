@@ -4,8 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"fmt"
+	"io"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/pkg/errors"
 	"github.com/pressly/goose/v3"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -15,7 +21,6 @@ var (
 	dir = "migrations"
 	//go:embed migrations/*.go
 	embedMigrations embed.FS
-	DB              *sql.DB // любая БД
 	ctx             context.Context
 )
 
@@ -47,7 +52,9 @@ func main() {
 }
 
 func migration(args []string) {
-	defer closeDb()
+
+	db := openDB()
+	defer closeDB(db)
 
 	goose.SetBaseFS(embedMigrations)
 
@@ -65,13 +72,31 @@ func migration(args []string) {
 
 	log.Println("migrate arguments...", arguments)
 
-	if err := goose.RunWithOptionsContext(ctx, cmd, DB, dir, arguments, goose.WithAllowMissing()); err != nil {
+	if err := goose.RunWithOptionsContext(ctx, cmd, db, dir, arguments, goose.WithAllowMissing()); err != nil {
 		log.Fatalf("goose %v: %v", cmd, err)
 	}
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
 }
 
-func closeDb() {
-	if err := DB.Close(); err != nil {
-		log.Fatalf("failed to close DB: %v\n", err)
+func openDB() *sql.DB {
+	db, err := sql.Open("postgres", fmt.Sprintf(
+		"user=%s password=%s dbname=%s host=%s sslmode=%s port=%d",
+		"postgres", "postgres", "postgres", "localhost", "disable", 5432),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return db
+}
+
+func closeDB(db io.Closer) {
+	if err := db.Close(); err != nil {
+		log.Println(errors.Wrap(err, "err closing db connection"))
+	} else {
+		log.Println("db connection gracefully closed")
 	}
 }
